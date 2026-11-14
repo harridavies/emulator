@@ -364,8 +364,8 @@ private:
     void executeMov(const Instruction& instruction) {
         checkTwoOperands(instruction);
         
-        std::uint64_t value = readOperand(instruction.first_);
-        writeOperand(instruction.second_, value);
+        std::uint64_t value = readOperand(instruction.first_, instruction.width_);
+        writeOperand(instruction.second_, value, instruction.width_);
 
         state_.ip_++;
     }
@@ -373,10 +373,10 @@ private:
     void executeAdd(const Instruction& instruction) {
         checkTwoOperands(instruction);
 
-        std::uint64_t lhs = readOperand(instruction.first_);
-        std::uint64_t rhs = readOperand(instruction.second_);
+        std::uint64_t lhs = readOperand(instruction.first_, instruction.width_);
+        std::uint64_t rhs = readOperand(instruction.second_, instruction.width_);
         
-        writeOperand(instruction.second_, lhs + rhs);
+        writeOperand(instruction.second_, lhs + rhs, instruction.width_);
         updateAddFlags(lhs, rhs, rhs + lhs, instruction.width_);
 
         state_.ip_++;
@@ -385,10 +385,10 @@ private:
     void executeSub(const Instruction& instruction) {
         checkTwoOperands(instruction);
 
-        std::uint64_t lhs = readOperand(instruction.first_);
-        std::uint64_t rhs = readOperand(instruction.second_);
+        std::uint64_t lhs = readOperand(instruction.first_, instruction.width_);
+        std::uint64_t rhs = readOperand(instruction.second_, instruction.width_);
 
-        writeOperand(instruction.second_, rhs - lhs);
+        writeOperand(instruction.second_, rhs - lhs, instruction.width_);
         updateSubFlags(lhs, rhs, rhs - lhs, instruction.width_);
 
         state_.ip_++;
@@ -397,8 +397,8 @@ private:
     void executeInc(const Instruction& instruction) {
         checkOneOperands(instruction);
 
-        std::uint64_t value = readOperand(instruction.first_);
-        writeOperand(instruction.first_, value + 1);
+        std::uint64_t value = readOperand(instruction.first_, instruction.width_);
+        writeOperand(instruction.first_, value + 1, instruction.width_);
 
         bool cf = state_.carryFlag_;
         updateAddFlags(1, value, value + 1, instruction.width_);
@@ -410,8 +410,8 @@ private:
     void executeDec(const Instruction& instruction) {
         checkOneOperands(instruction);
 
-        std::uint64_t value = readOperand(instruction.first_);
-        writeOperand(instruction.first_, value - 1); 
+        std::uint64_t value = readOperand(instruction.first_, instruction.width_);
+        writeOperand(instruction.first_, value - 1, instruction.width_); 
 
         bool cf = state_.carryFlag_;
         updateSubFlags(1, value, value - 1, instruction.width_);
@@ -422,14 +422,14 @@ private:
 
     void executeJmp(const Instruction& instruction) {
         checkOneOperands(instruction, true);
-        state_.ip_ = readOperand(instruction.first_);
+        state_.ip_ = readOperand(instruction.first_, instruction.width_);
     }
 
     void executeCmp(const Instruction& instruction) {
         checkTwoOperands(instruction);
 
-        std::uint64_t lhs = readOperand(instruction.first_);
-        std::uint64_t rhs = readOperand(instruction.second_);
+        std::uint64_t lhs = readOperand(instruction.first_, instruction.width_);
+        std::uint64_t rhs = readOperand(instruction.second_, instruction.width_);
 
         updateSubFlags(lhs, rhs, rhs - lhs, instruction.width_);
         state_.ip_++;
@@ -438,8 +438,8 @@ private:
     void executeAnd(const Instruction& instruction) {
         checkTwoOperands(instruction);
 
-        std::uint64_t lhs = readOperand(instruction.first_);
-        std::uint64_t rhs = readOperand(instruction.second_);
+        std::uint64_t lhs = readOperand(instruction.first_, instruction.width_);
+        std::uint64_t rhs = readOperand(instruction.second_, instruction.width_);
         std::uint64_t res = rhs & lhs;
 
         std::uint64_t mask = maskForWidth(instruction.width_);
@@ -447,7 +447,7 @@ private:
 
         res &= mask;
 
-        writeOperand(instruction.second_, res);
+        writeOperand(instruction.second_, res, instruction.width_);
 
         state_.zeroFlag_ = (res == 0) ? 1 : 0;
         state_.signFlag_ = ((res >> signbit) & 1) != 0;
