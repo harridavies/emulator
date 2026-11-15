@@ -27,8 +27,8 @@ void step(vm::VirtualMachine& machine, std::size_t count) {
 void expectEndOfProgram(vm::VirtualMachine& machine) {
     try {
         machine.step();
-    } catch (const char* message) {
-        test::expect(std::string_view(message) == "instruction doesn't exist",
+    } catch (const std::runtime_error& error) {
+        test::expect(std::string_view(error.what()) == "instruction doesn't exist",
                      "VM must have reached the end of the program");
         return;
     }
@@ -141,7 +141,7 @@ void rejectsMismatchedOperandWidths() {
 
     // WHEN the invalid instruction executes
     // THEN the VM rejects it and halts
-    test::expectThrows<const char*>([&] { machine.step(); },
+    test::expectThrows<std::runtime_error>([&] { machine.step(); },
                                    "Mismatched register and instruction widths must be rejected");
     machine.step();
 }

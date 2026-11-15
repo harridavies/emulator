@@ -48,14 +48,14 @@ void checksMemoryBoundaries() {
     test::expect(memory.read32(DRAM_SIZE - 4) == 3, "Last double word must be accessible");
     memory.write64(DRAM_SIZE - 8, 4);
     test::expect(memory.read64(DRAM_SIZE - 8) == 4, "Last quad word must be accessible");
-    test::expectThrows<const char*>([&] { (void)memory.read8(DRAM_SIZE); }, "Out-of-range byte read accepted");
-    test::expectThrows<const char*>([&] { memory.write8(DRAM_SIZE, 0); }, "Out-of-range byte write accepted");
-    test::expectThrows<const char*>([&] { (void)memory.read16(DRAM_SIZE - 1); }, "Out-of-range word read accepted");
-    test::expectThrows<const char*>([&] { memory.write16(DRAM_SIZE - 1, 0); }, "Out-of-range word write accepted");
-    test::expectThrows<const char*>([&] { (void)memory.read32(DRAM_SIZE - 3); }, "Out-of-range double-word read accepted");
-    test::expectThrows<const char*>([&] { memory.write32(DRAM_SIZE - 3, 0); }, "Out-of-range double-word write accepted");
-    test::expectThrows<const char*>([&] { (void)memory.read64(DRAM_SIZE - 7); }, "Out-of-range quad-word read accepted");
-    test::expectThrows<const char*>([&] { memory.write64(DRAM_SIZE - 7, 0); }, "Out-of-range quad-word write accepted");
+    test::expectThrows<std::runtime_error>([&] { (void)memory.read8(DRAM_SIZE); }, "Out-of-range byte read accepted");
+    test::expectThrows<std::runtime_error>([&] { memory.write8(DRAM_SIZE, 0); }, "Out-of-range byte write accepted");
+    test::expectThrows<std::runtime_error>([&] { (void)memory.read16(DRAM_SIZE - 1); }, "Out-of-range word read accepted");
+    test::expectThrows<std::runtime_error>([&] { memory.write16(DRAM_SIZE - 1, 0); }, "Out-of-range word write accepted");
+    test::expectThrows<std::runtime_error>([&] { (void)memory.read32(DRAM_SIZE - 3); }, "Out-of-range double-word read accepted");
+    test::expectThrows<std::runtime_error>([&] { memory.write32(DRAM_SIZE - 3, 0); }, "Out-of-range double-word write accepted");
+    test::expectThrows<std::runtime_error>([&] { (void)memory.read64(DRAM_SIZE - 7); }, "Out-of-range quad-word read accepted");
+    test::expectThrows<std::runtime_error>([&] { memory.write64(DRAM_SIZE - 7, 0); }, "Out-of-range quad-word write accepted");
 }
 
 void movesTransferMemoryOwnership() {
@@ -70,8 +70,8 @@ void movesTransferMemoryOwnership() {
 
     // THEN the destination retains the value and moved-from memory rejects access
     test::expect(assigned.read64(0) == 42, "Move must preserve memory contents");
-    test::expectThrows<const char*>([&] { (void)original.read8(0); }, "Moved-from memory accepted a read");
-    test::expectThrows<const char*>([&] { moved.write8(0, 1); }, "Moved-from memory accepted a write");
+    test::expectThrows<std::runtime_error>([&] { (void)original.read8(0); }, "Moved-from memory accepted a read");
+    test::expectThrows<std::runtime_error>([&] { moved.write8(0, 1); }, "Moved-from memory accepted a write");
 }
 
 } // namespace

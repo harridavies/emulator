@@ -1,3 +1,4 @@
+#include <stdexcept>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -40,7 +41,7 @@ public:
             case OperandWidth::Word:  numBytes = 2; break;
             case OperandWidth::DWord: numBytes = 4; break;
             case OperandWidth::QWord: numBytes = 8; break;
-            default: throw "invalid operand width";
+            default: throw std::runtime_error("invalid operand width");
         }
 
         CacheLine& line = findLine(address);
@@ -102,7 +103,7 @@ public:
         }
 
         if (!destination) {
-            throw "cache set full: eviction not implemented";
+            throw std::runtime_error("cache set full: eviction not implemented");
         }
 
         std::uint64_t blockAddress = blockIndex * LineSize;
@@ -118,7 +119,7 @@ public:
     // connection to lower levels
     void readBlock(std::uint64_t address, std::byte* destination) {
         if (address % LineSize != 0) {
-            throw "unaligned block read";
+            throw std::runtime_error("unaligned block read");
         }
 
         CacheLine& line = findLine(address);
@@ -127,7 +128,7 @@ public:
 
     void writeBlock(std::uint64_t address, const std::byte* source) {
         if (address % LineSize != 0) {
-            throw "unaligned block write";
+            throw std::runtime_error("unaligned block write");
         }
 
         CacheLine& line = findLine(address);
@@ -139,14 +140,14 @@ public:
     void write(std::uint64_t address, std::uint64_t value, OperandWidth width) {
 
         std::size_t blockOffset = address % LineSize;
-        uint64_t numBytes{};
+        std::size_t numBytes{};
 
         switch (width) {
             case OperandWidth::Byte:  numBytes = 1; break;
             case OperandWidth::Word:  numBytes = 2; break;
             case OperandWidth::DWord: numBytes = 4; break;
             case OperandWidth::QWord: numBytes = 8; break;
-            default: throw "invalid operand width";
+            default: throw std::runtime_error("invalid operand width");
         }
 
         std::size_t firstBytes = std::min(numBytes, LineSize - blockOffset);

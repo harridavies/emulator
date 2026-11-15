@@ -3,6 +3,7 @@
 #include "Instruction.hpp"
 #include "CPUState.hpp"
 
+#include <stdexcept>
 #include <cstdint>
 #include <utility>
 #include <variant>
@@ -13,7 +14,11 @@ namespace vm {
 class VirtualMachine {
 public:
     VirtualMachine(std::vector<Instruction> instructions) : instructions_(std::move(instructions)) {}
- 
+    
+    const CPUState& state() const noexcept {
+        return state_;
+    }
+
     void step() {
         if (state_.state_ == State::HALTED) {
             return;
@@ -23,7 +28,7 @@ public:
 
         if (ip >= instructions_.size()) {
             state_.state_ = State::HALTED;
-            throw "instruction doesn't exist";
+            throw std::runtime_error("instruction doesn't exist");
         }
         
         const Instruction& instruction = instructions_[ip];
@@ -100,9 +105,21 @@ public:
             }
             default : {
                 state_.state_ = State::HALTED;
-                throw "unsupported opcode";
+                throw std::runtime_error("unsupported opcode");
             }
         } // end switch
+    }
+
+    void run() {
+        std::size_t instructionCount{};
+        while (state_.state_ != State::HALTED || instructionCount == /*1000 limit for now*/1000) {
+            step();
+            instructionCount++;
+        }
+    }
+
+    void debugInstruction() const {
+        instructions_[state_.ip_].debugInstruction();
     }
 
 private:
@@ -112,7 +129,7 @@ private:
     std::uint64_t readOperand(const std::optional<Operand>& operand, OperandWidth instructionWidth) {
         if (!operand.has_value()) {
             state_.state_ = State::HALTED;
-            throw "src operand empty";
+            throw std::runtime_error("src operand empty");
         }
 
         if (std::holds_alternative<RegisterView>(operand.value())) {
@@ -130,7 +147,7 @@ private:
                         return static_cast<std::uint64_t>(state_.registers_[registerIndex].read8());
                     } else {
                         state_.state_ = State::HALTED; 
-                        throw "operand offset invalid";
+                        throw std::runtime_error("operand offset invalid");
                         break;
                     }
                 }
@@ -145,7 +162,7 @@ private:
                 }
                 default : {
                     state_.state_ = State::HALTED; 
-                    throw "operand width does not exist";
+                    throw std::runtime_error("operand width does not exist");
                 }
             }
         } else if (std::holds_alternative<MemoryAddress>(operand.value())) {
@@ -164,21 +181,21 @@ private:
                 }
                 default : {
                     state_.state_ = State::HALTED;
-                    throw "invalid memory operand width";
+                    throw std::runtime_error("invalid memory operand width");
                 }
             }
         } else if (std::holds_alternative<std::uint64_t>(operand.value())) {
             return std::get<std::uint64_t>(operand.value());
         } else {
             state_.state_ = State::HALTED;
-            throw "src operand must be an immediate, register, or memory address"; 
+            throw std::runtime_error("src operand must be an immediate, register, or memory address"); 
         }
     }
 
     void writeOperand(const std::optional<Operand>& operand, std::uint64_t value, OperandWidth instructionWidth) {
         if (!operand.has_value()) {
             state_.state_ = State::HALTED;
-            throw "dest operand empty"; 
+            throw std::runtime_error("dest operand empty"); 
         }
 
         if (std::holds_alternative<RegisterView>(operand.value())) {
@@ -196,7 +213,7 @@ private:
                         state_.registers_[registerIndex].write8(value);
                     } else {
                         state_.state_ = State::HALTED; 
-                        throw "operand offset invalid"; 
+                        throw std::runtime_error("operand offset invalid"); 
                     }
                     break;
                 }
@@ -214,7 +231,7 @@ private:
                 }
                 default : {
                     state_.state_ = State::HALTED; 
-                    throw "operand width does not exist";
+                    throw std::runtime_error("operand width does not exist");
                 } 
             }
         } else if (std::holds_alternative<MemoryAddress>(operand.value())) {
@@ -237,23 +254,23 @@ private:
                 }
                 default : {
                     state_.state_ = State::HALTED;
-                    throw "invalid memory operand width";
+                    throw std::runtime_error("invalid memory operand width");
                 }
             }
         } else {
             state_.state_ = State::HALTED;
-            throw "dest operand must be a register, or memory address"; 
+            throw std::runtime_error("dest operand must be a register, or memory address"); 
         }
     }
 
     void checkOneOperands(const Instruction& instruction, bool skipWidth = false) {
         if (!instruction.first_.has_value()) {
             state_.state_ = State::HALTED;
-            throw "this operation must have only one operand";
+            throw std::runtime_error("this operation must have only one operand");
         }
         if (instruction.second_.has_value()) {
             state_.state_ = State::HALTED;
-            throw "this operation must have only one operand";
+            throw std::runtime_error("this operation must have only one operand");
         }
         if (skipWidth) {
             return;
@@ -264,7 +281,7 @@ private:
     void checkTwoOperands(const Instruction& instruction, bool skipWidth = false) {
         if (!instruction.first_.has_value() || !instruction.second_.has_value()) {
             state_.state_ = State::HALTED;
-            throw "this operation must have two operands";
+            throw std::runtime_error("this operation must have two operands");
         }
         if (skipWidth) {
             return;
@@ -303,7 +320,7 @@ private:
         }
 
         state_.state_ = State::HALTED;
-        throw "invalid register view";
+        throw std::runtime_error("invalid register view");
     }
 
     void validateOperandWidth(const Operand& operand, OperandWidth instructionWidth) {
@@ -312,7 +329,7 @@ private:
         }
         if (std::get<RegisterView>(operand).width_ != instructionWidth) {
             state_.state_ = State::HALTED;
-            throw "regsiter and instruction widths do not match";
+            throw std::runtime_error("regsiter and instruction widths do not match");
         }
     }
 
@@ -357,7 +374,7 @@ private:
             case OperandWidth::Word:  return 0xFFFFULL;
             case OperandWidth::DWord: return 0xFFFFFFFFULL;
             case OperandWidth::QWord: return 0xFFFFFFFFFFFFFFFFULL;
-            default: throw "invalid operand width";
+            default: throw std::runtime_error("invalid operand width");
         }
     }
 

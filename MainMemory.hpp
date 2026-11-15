@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdexcept>
 #include <bit>
 #include <cstring>
 #include <cstdint>
@@ -96,37 +97,37 @@ private:
 
     void validateAddress8(std::uint64_t address) const {
         if (buffer_ == nullptr) {
-            throw "cannot access empty memory";
+            throw std::runtime_error("cannot access empty memory");
         }
         if (address >= DRAM_SIZE) {
-            throw "address outside of DRAM memory (8 bit)";
+            throw std::runtime_error("address outside of DRAM memory (8 bit)");
         }
     }
 
     void validateAddress16(std::uint64_t address) const {
         if (buffer_ == nullptr) {
-            throw "cannot access empty memory";
+            throw std::runtime_error("cannot access empty memory");
         }
         if (address > DRAM_SIZE - sizeof(std::uint16_t)) {
-            throw "address outside of DRAM memory (16 bit)";
+            throw std::runtime_error("address outside of DRAM memory (16 bit)");
         }
     }
 
     void validateAddress32(std::uint64_t address) const {
         if (buffer_ == nullptr) {
-            throw "cannot access empty memory";
+            throw std::runtime_error("cannot access empty memory");
         }
         if (address > DRAM_SIZE - sizeof(std::uint32_t)) {
-            throw "address outside of DRAM memory (32 bit)";
+            throw std::runtime_error("address outside of DRAM memory (32 bit)");
         }
     }
 
     void validateAddress64(std::uint64_t address) const {
         if (buffer_ == nullptr) {
-            throw "cannot access empty memory";
+            throw std::runtime_error("cannot access empty memory");
         }
         if (address > DRAM_SIZE - sizeof(std::uint64_t)) {
-            throw "address outside of DRAM memory (64 bit)";
+            throw std::runtime_error("address outside of DRAM memory (64 bit)");
         }
     }
 };

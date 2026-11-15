@@ -42,7 +42,7 @@ void rejectsUnknownRegisters() {
 
     // WHEN its register index is requested
     // THEN the lookup throws
-    test::expectThrows<const char*>([&] { (void)cpu.getRegisterIndex(invalid); },
+    test::expectThrows<std::runtime_error>([&] { (void)cpu.getRegisterIndex(invalid); },
                                    "Invalid register name must be rejected");
 }
 
