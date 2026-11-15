@@ -2,6 +2,8 @@
 #include "TestSupport.hpp"
 
 #include <string_view>
+#include <utility>
+#include <vector>
 
 namespace {
 
@@ -146,6 +148,228 @@ void rejectsMismatchedOperandWidths() {
     machine.step();
 }
 
+void runHaltsBeforeInstructionLimit() {
+    // GIVEN a short program that writes a register and halts
+    vm::VirtualMachine machine({
+        {Opcode::MOV, qword, std::uint64_t{42}, rax},
+        {Opcode::HLT, qword, std::nullopt, std::nullopt}
+    });
+
+    // WHEN the program runs within its instruction budget
+    machine.run();
+
+    // THEN it completes normally with the expected result
+    test::expect(machine.state().state_ == State::HALTED, "Program must halt normally");
+    test::expect(machine.state().registers_[0].read64() == 42, "Program must finish its work");
+}
+
+void runAllowsHaltOnFinalPermittedInstruction() {
+    // GIVEN 999 increments followed by HLT as instruction number 1000
+    std::vector<Instruction> instructions(999, {Opcode::INC, qword, rax, std::nullopt});
+    instructions.push_back({Opcode::HLT, qword, std::nullopt, std::nullopt});
+    vm::VirtualMachine machine(std::move(instructions));
+
+    // WHEN the program uses its entire instruction budget
+    machine.run();
+
+    // THEN the final HLT succeeds without reporting a limit error
+    test::expect(machine.state().state_ == State::HALTED, "Final permitted HLT must succeed");
+    test::expect(machine.state().registers_[0].read64() == 999, "All increments must execute");
+    test::expect(machine.state().ip_ == 999, "Execution must stop at HLT");
+}
+
+void runStopsAtInstructionLimit() {
+    // GIVEN an infinite loop that increments RAX once every two instructions
+    vm::VirtualMachine machine({
+        {Opcode::INC, qword, rax, std::nullopt},
+        {Opcode::JMP, qword, std::uint64_t{0}, std::nullopt}
+    });
+
+    // WHEN execution exhausts its 1000-instruction budget
+    // THEN it reports an error and halts before executing instruction number 1001
+    test::expectThrows<std::runtime_error>([&] { machine.run(); },
+                                          "Infinite loop must exhaust its instruction budget");
+    test::expect(machine.state().state_ == State::HALTED, "Budget exhaustion must halt execution");
+    test::expect(machine.state().registers_[0].read64() == 500, "Exactly 1000 instructions must execute");
+    test::expect(machine.state().ip_ == 0, "Final jump must leave the instruction pointer at zero");
+}
+
+void inspectionRejectsMissingInstructions() {
+    // GIVEN an empty program and a program that jumps outside its instruction list
+    vm::VirtualMachine empty({});
+    vm::VirtualMachine jumped({{Opcode::JMP, qword, std::uint64_t{99}, std::nullopt}});
+    jumped.step();
+
+    // WHEN their current instructions are inspected
+    // THEN both report an error without accessing invalid memory or changing state
+    for (auto* machine : {&empty, &jumped}) {
+        try {
+            machine->debugInstruction();
+            test::expect(false, "Missing current instruction must be rejected");
+        } catch (const std::runtime_error& error) {
+            test::expect(std::string_view(error.what()) == "no valid current instruction",
+                         "Inspection must explain that no valid instruction exists");
+        }
+        test::expect(machine->state().state_ == State::RUNNING, "Inspection must not change execution state");
+    }
+    test::expect(jumped.state().ip_ == 99, "Inspection must not change the instruction pointer");
+}
+
+void inspectionDisplaysValidInstructionsAfterHalting() {
+    // GIVEN a program whose current instruction is HLT
+    vm::VirtualMachine machine({{Opcode::HLT, qword, std::nullopt, std::nullopt}});
+
+    // WHEN the instruction is inspected before and after execution
+    const auto before = test::captureOutput([&] { machine.debugInstruction(); });
+    machine.run();
+    const auto after = test::captureOutput([&] { machine.debugInstruction(); });
+
+    // THEN the valid instruction remains inspectable in both states
+    test::expect(before == "HLT\n" && after == before, "Valid HLT must remain inspectable");
+    test::expect(machine.state().state_ == State::HALTED, "Inspection must preserve the halted state");
+}
+
+constexpr std::pair<OperandWidth, std::uint64_t> logicalWidths[] = {
+    {OperandWidth::Byte, 0xFFULL},
+    {OperandWidth::Word, 0xFFFFULL},
+    {OperandWidth::DWord, 0xFFFFFFFFULL},
+    {OperandWidth::QWord, 0xFFFFFFFFFFFFFFFFULL}
+};
+
+void orUpdatesResultAndFlagsAtEachWidth() {
+    // GIVEN each width and an addition that sets both carry and overflow
+    for (const auto& [width, mask] : logicalWidths) {
+        const RegisterView destination{RegisterName::RAX, width, 0};
+        const auto signBit = mask ^ (mask >> 1);
+        vm::VirtualMachine machine({
+            {Opcode::MOV, width, signBit, destination},
+            {Opcode::ADD, width, signBit, destination},
+            {Opcode::MOV, width, std::uint64_t{5}, destination},
+            {Opcode::OR, width, signBit, destination},
+            {Opcode::HLT, qword, std::nullopt, std::nullopt}
+        });
+
+        // WHEN OR combines an immediate source with the register destination
+        machine.run();
+
+        // THEN the result sets sign, clears zero, and clears carry and overflow
+        const auto& state = machine.state();
+        test::expect(state.registers_[0].read64() == (signBit | 5), "Incorrect OR result");
+        test::expect(state.signFlag_ == 1 && state.zeroFlag_ == 0, "Incorrect OR result flags");
+        test::expect(state.carryFlag_ == 0 && state.overflowFlag_ == 0, "OR must clear carry and overflow");
+    }
+}
+
+void xorUpdatesResultAndFlagsAtEachWidth() {
+    // GIVEN equal register operands at each width and previously set carry/overflow
+    for (const auto& [width, mask] : logicalWidths) {
+        const RegisterView destination{RegisterName::RAX, width, 0};
+        const RegisterView source{RegisterName::RBX, width, 0};
+        const auto signBit = mask ^ (mask >> 1);
+        vm::VirtualMachine machine({
+            {Opcode::MOV, width, signBit, destination},
+            {Opcode::ADD, width, signBit, destination},
+            {Opcode::MOV, width, std::uint64_t{0xA5}, destination},
+            {Opcode::MOV, width, std::uint64_t{0xA5}, source},
+            {Opcode::XOR, width, source, destination},
+            {Opcode::HLT, qword, std::nullopt, std::nullopt}
+        });
+
+        // WHEN XOR combines the equal operands
+        machine.run();
+
+        // THEN the result is zero, with sign/carry/overflow cleared and source preserved
+        const auto& state = machine.state();
+        test::expect(state.registers_[0].read64() == 0, "Equal XOR operands must produce zero");
+        test::expect(state.registers_[1].read64() == 0xA5, "XOR must preserve its source");
+        test::expect(state.zeroFlag_ == 1 && state.signFlag_ == 0, "Incorrect XOR result flags");
+        test::expect(state.carryFlag_ == 0 && state.overflowFlag_ == 0, "XOR must clear carry and overflow");
+    }
+}
+
+void notRespectsWidthAndPreservesFlags() {
+    // GIVEN each width with carry, overflow, and zero set by an earlier addition
+    for (const auto& [width, mask] : logicalWidths) {
+        const RegisterView destination{RegisterName::RAX, width, 0};
+        const auto signBit = mask ^ (mask >> 1);
+        vm::VirtualMachine machine({
+            {Opcode::MOV, width, signBit, destination},
+            {Opcode::ADD, width, signBit, destination},
+            {Opcode::MOV, width, std::uint64_t{1}, destination},
+            {Opcode::NOT, width, destination, std::nullopt},
+            {Opcode::HLT, qword, std::nullopt, std::nullopt}
+        });
+
+        // WHEN NOT inverts the operand
+        machine.run();
+
+        // THEN only bits within its width change and every flag is preserved
+        const auto& state = machine.state();
+        test::expect(state.registers_[0].read64() == mask - 1, "Incorrect width-limited NOT result");
+        test::expect(state.carryFlag_ == 1 && state.overflowFlag_ == 1 &&
+                     state.zeroFlag_ == 1 && state.signFlag_ == 0, "NOT must preserve all flags");
+    }
+}
+
+void bitwiseInstructionsSupportMemoryDestinations() {
+    // GIVEN a memory destination at each width with populated surrounding bytes
+    for (const auto& [width, mask] : logicalWidths) {
+        vm::VirtualMachine machine({
+            {Opcode::MOV, qword, std::uint64_t{0xFFFFFFFFFFFFFFFFULL}, MemoryAddress{16}},
+            {Opcode::MOV, width, std::uint64_t{0xA0}, MemoryAddress{16}},
+            {Opcode::OR, width, std::uint64_t{0x0F}, MemoryAddress{16}},
+            {Opcode::XOR, width, std::uint64_t{0xFF}, MemoryAddress{16}},
+            {Opcode::NOT, width, MemoryAddress{16}, std::nullopt},
+            {Opcode::HLT, qword, std::nullopt, std::nullopt}
+        });
+
+        // WHEN OR, XOR, and NOT modify the memory operand
+        machine.run();
+
+        // THEN the selected bytes contain NOT(0x50) and the other bytes are unchanged
+        const auto expected = ~mask | (mask ^ 0x50ULL);
+        test::expect(machine.state().memory_.read64(16) == expected, "Incorrect memory bitwise result or width");
+    }
+}
+
+void bitwiseInstructionsPreserveOtherRegisterBits() {
+    // GIVEN a full register containing distinct bytes
+    vm::VirtualMachine machine({
+        {Opcode::MOV, qword, std::uint64_t{0x1122334455667788ULL}, rax},
+        {Opcode::OR, byte, std::uint64_t{0x80}, ah},
+        {Opcode::XOR, byte, std::uint64_t{0xFF}, al},
+        {Opcode::NOT, byte, ah, std::nullopt},
+        {Opcode::HLT, qword, std::nullopt, std::nullopt}
+    });
+
+    // WHEN the high and low byte views are modified
+    machine.run();
+
+    // THEN the remaining register bits are preserved
+    test::expect(machine.state().registers_[0].read64() == 0x1122334455660877ULL,
+                 "Bitwise byte operations must preserve other register bits");
+}
+
+void bitwiseInstructionsValidateOperands() {
+    // GIVEN malformed bitwise instructions with wrong arity, widths, or destinations
+    const Instruction invalid[] = {
+        {Opcode::OR, qword, std::nullopt, rax},
+        {Opcode::XOR, qword, rax, std::nullopt},
+        {Opcode::NOT, byte, al, al},
+        {Opcode::OR, qword, std::uint64_t{1}, al},
+        {Opcode::XOR, qword, std::uint64_t{1}, std::uint64_t{2}},
+        {Opcode::NOT, qword, std::uint64_t{1}, std::nullopt}
+    };
+
+    // WHEN each malformed instruction executes
+    // THEN it is rejected and the VM halts
+    for (const auto& instruction : invalid) {
+        vm::VirtualMachine machine({instruction});
+        test::expectThrows<std::runtime_error>([&] { machine.step(); }, "Invalid bitwise operands accepted");
+        test::expect(machine.state().state_ == State::HALTED, "Invalid operands must halt execution");
+    }
+}
+
 } // namespace
 
 int main() {
@@ -156,4 +380,15 @@ int main() {
     jumpsToImmediateAndRegisterTargets();
     conditionalLoopStopsAtZero();
     rejectsMismatchedOperandWidths();
+    runHaltsBeforeInstructionLimit();
+    runAllowsHaltOnFinalPermittedInstruction();
+    runStopsAtInstructionLimit();
+    inspectionRejectsMissingInstructions();
+    inspectionDisplaysValidInstructionsAfterHalting();
+    orUpdatesResultAndFlagsAtEachWidth();
+    xorUpdatesResultAndFlagsAtEachWidth();
+    notRespectsWidthAndPreservesFlags();
+    bitwiseInstructionsSupportMemoryDestinations();
+    bitwiseInstructionsPreserveOtherRegisterBits();
+    bitwiseInstructionsValidateOperands();
 }

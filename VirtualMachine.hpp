@@ -69,8 +69,14 @@ public:
                 executeCmp(instruction); 
                 break;
             }
-            case Opcode::AND : {
-                executeAnd(instruction);
+            case Opcode::AND :
+            case Opcode::OR :
+            case Opcode::XOR : {
+                executeBitwise(instruction);
+                break;
+            }
+            case Opcode::NOT : {
+                executeNot(instruction);
                 break;
             }
             case Opcode::JE : 
@@ -111,14 +117,22 @@ public:
     }
 
     void run() {
+        constexpr std::size_t instructionLimit = 1000;
         std::size_t instructionCount{};
-        while (state_.state_ != State::HALTED || instructionCount == /*1000 limit for now*/1000) {
+        while (state_.state_ != State::HALTED) {
+            if (instructionCount >= instructionLimit) {
+                state_.state_ = State::HALTED;
+                throw std::runtime_error("instruction limit exceeded (1000 instructions)");
+            }
             step();
             instructionCount++;
         }
     }
 
     void debugInstruction() const {
+        if (state_.ip_ >= instructions_.size()) {
+            throw std::runtime_error("no valid current instruction");
+        }
         instructions_[state_.ip_].debugInstruction();
     }
 
@@ -452,12 +466,20 @@ private:
         state_.ip_++;
     }
 
-    void executeAnd(const Instruction& instruction) {
+    void executeBitwise(const Instruction& instruction) {
         checkTwoOperands(instruction);
 
         std::uint64_t lhs = readOperand(instruction.first_, instruction.width_);
         std::uint64_t rhs = readOperand(instruction.second_, instruction.width_);
-        std::uint64_t res = rhs & lhs;
+        std::uint64_t res{};
+        switch (instruction.opcode_) {
+            case Opcode::AND: res = rhs & lhs; break;
+            case Opcode::OR:  res = rhs | lhs; break;
+            case Opcode::XOR: res = rhs ^ lhs; break;
+            default:
+                state_.state_ = State::HALTED;
+                throw std::runtime_error("unsupported bitwise opcode");
+        }
 
         std::uint64_t mask = maskForWidth(instruction.width_);
         std::uint64_t signbit = static_cast<uint64_t>(instruction.width_) - 1;
@@ -471,6 +493,15 @@ private:
         state_.carryFlag_ = 0;
         state_.overflowFlag_ = 0;
 
+        state_.ip_++;
+    }
+
+    void executeNot(const Instruction& instruction) {
+        checkOneOperands(instruction);
+        const auto value = readOperand(instruction.first_, instruction.width_);
+        const auto result = ~value & maskForWidth(instruction.width_);
+        writeOperand(instruction.first_, result, instruction.width_);
+        // NOT changes the operand without changing any flags.
         state_.ip_++;
     }
 

@@ -1,6 +1,9 @@
 #pragma once
 
 #include <stdexcept>
+#include <iostream>
+#include <sstream>
+#include <string>
 
 namespace test {
 
@@ -18,6 +21,20 @@ void expectThrows(Action action, const char* message) {
         return;
     }
     throw std::runtime_error(message);
+}
+
+template <typename Action>
+std::string captureOutput(Action action) {
+    std::ostringstream output;
+    auto* original = std::cout.rdbuf(output.rdbuf());
+    try {
+        action();
+    } catch (...) {
+        std::cout.rdbuf(original);
+        throw;
+    }
+    std::cout.rdbuf(original);
+    return output.str();
 }
 
 } // namespace test
